@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// レート制限用のシンプルなメモリストア
-const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+// 定数
+const MAX_LOG_LENGTH = 50000; // 最大50000文字
+const MIN_LOG_LENGTH = 10;
+const API_TIMEOUT = 30000; // 30秒タイムアウト
 const RATE_LIMIT = 10; // 1分あたりのリクエスト数
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1分
+
+// レート制限用のシンプルなメモリストア
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
@@ -23,7 +28,25 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
-// 環境変数からAPIキーを取得（フォールバックなし）
+// 入力サニタイズ（XSS対策）
+function sanitizeInput(input: string): string {
+  if (typeof input !== 'string') return '';
+  return input
+    .replace(/[<>]/g, '') // HTMLタグ除去
+    .replace(/javascript:/gi, '') // javascript: プロトコル除去
+    .replace(/on\w+=/gi, '') // イベントハンドラ除去
+    .trim();
+}
+
+// タイムアウト付きPromise
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('TIMEOUT')), ms)
+  );
+  return Promise.race([promise, timeout]);
+}
+
+// 環境変数からAPIキーを取得
 const API_KEY = process.env.GEMINI_API_KEY;
 
 export async function POST(request: NextRequest) {
@@ -31,13 +54,13 @@ export async function POST(request: NextRequest) {
   if (!API_KEY) {
     console.error('GEMINI_API_KEY is not configured');
     return NextResponse.json(
-      { success: false, error: 'サーバー設定エラー: APIキーが設定されていません' },
+      { success: false, error: 'サーバー設定エラー: APIキーが設定されていません。管理者にお問い合わせください。' },
       { status: 500 }
     );
   }
 
   // レート制限チェック
-  const ip = request.headers.get('x-forwarded-for') || 'unknown';
+  const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
   if (!checkRateLimit(ip)) {
     return NextResponse.json(
       { success: false, error: 'リクエスト制限に達しました。1分後に再試行してください。' },
@@ -46,6 +69,15 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // リクエストサイズチェック
+    const contentLength = request.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > 1024 * 1024) { // 1MB制限
+      return NextResponse.json(
+        { success: false, error: 'リクエストサイズが大きすぎます（最大1MB）' },
+        { status: 413 }
+      );
+    }
+
     const body = await request.json();
     const { action, data } = body;
 
@@ -70,11 +102,20 @@ export async function POST(request: NextRequest) {
     let prompt = '';
     let responseFormat = 'text';
 
+    // ログテキストのサニタイズと検証
+    const logText = sanitizeInput(data.logText || '');
+
     switch (action) {
       case 'summarize':
-        if (!data.logText || typeof data.logText !== 'string' || data.logText.trim().length < 10) {
+        if (logText.length < MIN_LOG_LENGTH) {
           return NextResponse.json(
-            { success: false, error: 'ログテキストが短すぎます（10文字以上必要）' },
+            { success: false, error: `ログテキストが短すぎます（${MIN_LOG_LENGTH}文字以上必要）` },
+            { status: 400 }
+          );
+        }
+        if (logText.length > MAX_LOG_LENGTH) {
+          return NextResponse.json(
+            { success: false, error: `ログテキストが長すぎます（最大${MAX_LOG_LENGTH}文字）` },
             { status: 400 }
           );
         }
@@ -95,7 +136,7 @@ export async function POST(request: NextRequest) {
 - 重要な出来事を時系列順に整理
 
 【対応ログ】
-${data.logText}`;
+${logText}`;
         break;
 
       case 'suggestCause':
@@ -114,10 +155,10 @@ ${data.logText}`;
    └ 詳細説明
 
 【経緯データ】
-${data.history?.map((h: { date: string; summary: string; detail: string }) => `${h.date}: ${h.summary} - ${h.detail}`).join('\n') || '経緯データなし'}
+${data.history?.map((h: { date: string; summary: string; detail: string }) => `${sanitizeInput(h.date)}: ${sanitizeInput(h.summary)} - ${sanitizeInput(h.detail)}`).join('\n') || '経緯データなし'}
 
 【元のログ】
-${data.logText || '（なし）'}`;
+${logText || '（なし）'}`;
         break;
 
       case 'suggestCountermeasure':
@@ -142,13 +183,13 @@ ${data.logText || '（なし）'}`;
   実施時期: [即時/短期/中長期]
 
 【経緯データ】
-${data.history?.map((h: { date: string; summary: string }) => `${h.date}: ${h.summary}`).join('\n') || '経緯データなし'}
+${data.history?.map((h: { date: string; summary: string }) => `${sanitizeInput(h.date)}: ${sanitizeInput(h.summary)}`).join('\n') || '経緯データなし'}
 
 【原因】
-${data.cause || '（未入力）'}
+${sanitizeInput(data.cause) || '（未入力）'}
 
 【元のログ】
-${data.logText || '（なし）'}`;
+${logText || '（なし）'}`;
         break;
 
       case 'generateVisualSheet':
@@ -183,16 +224,16 @@ ${data.logText || '（なし）'}`;
 }
 
 【経緯データ】
-${data.history?.map((h: { date: string; summary: string; detail: string }) => `${h.date}: ${h.summary} - ${h.detail}`).join('\n') || '経緯データなし'}
+${data.history?.map((h: { date: string; summary: string; detail: string }) => `${sanitizeInput(h.date)}: ${sanitizeInput(h.summary)} - ${sanitizeInput(h.detail)}`).join('\n') || '経緯データなし'}
 
 【原因（ユーザー入力）】
-${data.cause || '（未入力）'}
+${sanitizeInput(data.cause) || '（未入力）'}
 
 【対策（ユーザー入力）】
-${data.countermeasure || '（未入力）'}
+${sanitizeInput(data.countermeasure) || '（未入力）'}
 
 【元のログ】
-${data.logText || '（なし）'}`;
+${logText || '（なし）'}`;
         break;
 
       default:
@@ -202,7 +243,11 @@ ${data.logText || '（なし）'}`;
         );
     }
 
-    const result = await model.generateContent(prompt);
+    // タイムアウト付きでAPI呼び出し
+    const result = await withTimeout(
+      model.generateContent(prompt),
+      API_TIMEOUT
+    );
     const response = result.response;
     const text = response.text();
 
@@ -231,7 +276,17 @@ ${data.logText || '（なし）'}`;
   } catch (error) {
     console.error('Gemini API Error:', error);
 
-    // エラータイプに応じたメッセージ
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // タイムアウトエラー
+    if (errorMessage === 'TIMEOUT') {
+      return NextResponse.json(
+        { success: false, error: 'AI処理がタイムアウトしました。もう一度お試しください。' },
+        { status: 504 }
+      );
+    }
+
+    // リクエスト形式エラー
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { success: false, error: 'リクエストの形式が不正です' },
@@ -239,19 +294,27 @@ ${data.logText || '（なし）'}`;
       );
     }
 
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-    if (errorMessage.includes('API_KEY')) {
+    // APIキーエラー
+    if (errorMessage.includes('API_KEY') || errorMessage.includes('API key')) {
       return NextResponse.json(
-        { success: false, error: 'APIキーが無効です' },
+        { success: false, error: 'APIキーが無効です。管理者にお問い合わせください。' },
         { status: 401 }
       );
     }
 
-    if (errorMessage.includes('quota') || errorMessage.includes('limit')) {
+    // レート制限エラー
+    if (errorMessage.includes('quota') || errorMessage.includes('limit') || errorMessage.includes('429')) {
       return NextResponse.json(
         { success: false, error: 'API利用制限に達しました。しばらく待ってから再試行してください。' },
         { status: 429 }
+      );
+    }
+
+    // ネットワークエラー
+    if (errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('ECONNREFUSED')) {
+      return NextResponse.json(
+        { success: false, error: 'ネットワークエラーが発生しました。インターネット接続を確認してください。' },
+        { status: 503 }
       );
     }
 

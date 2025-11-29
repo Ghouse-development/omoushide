@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import Header from '@/components/Header';
+import BrowserCheck from '@/components/BrowserCheck';
 import LogInput from '@/components/LogInput';
 import HistoryTable from '@/components/HistoryTable';
 import CauseInput from '@/components/CauseInput';
@@ -221,6 +222,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <BrowserCheck />
       <Header />
 
       <main className="max-w-5xl mx-auto px-4 py-8">
