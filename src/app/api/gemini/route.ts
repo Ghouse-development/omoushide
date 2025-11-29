@@ -274,9 +274,9 @@ ${logText || '（なし）'}`;
     return NextResponse.json({ success: true, data: text });
 
   } catch (error) {
-    console.error('Gemini API Error:', error);
-
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : '';
+    console.error('Gemini API Error:', errorMessage, errorStack);
 
     // タイムアウトエラー
     if (errorMessage === 'TIMEOUT') {
@@ -318,8 +318,24 @@ ${logText || '（なし）'}`;
       );
     }
 
+    // モデルが見つからないエラー
+    if (errorMessage.includes('not found') || errorMessage.includes('model')) {
+      return NextResponse.json(
+        { success: false, error: 'AIモデルが利用できません。管理者にお問い合わせください。' },
+        { status: 500 }
+      );
+    }
+
+    // GoogleGenerativeAI固有のエラー
+    if (errorMessage.includes('GoogleGenerativeAI') || errorMessage.includes('generativelanguage')) {
+      return NextResponse.json(
+        { success: false, error: `Gemini APIエラー: ${errorMessage.substring(0, 100)}` },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
-      { success: false, error: 'AI処理中にエラーが発生しました。再試行してください。' },
+      { success: false, error: `AI処理中にエラーが発生しました: ${errorMessage.substring(0, 100)}` },
       { status: 500 }
     );
   }
