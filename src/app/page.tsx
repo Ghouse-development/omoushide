@@ -72,12 +72,17 @@ export default function Home() {
 
   // Analyze log
   const handleAnalyze = async () => {
-    if (!logText.trim()) {
+    const trimmedLog = logText.trim();
+    if (!trimmedLog) {
       showToast('ログを入力してください', 'warning');
       return;
     }
-    if (logText.trim().length < 10) {
+    if (trimmedLog.length < 10) {
       showToast('ログが短すぎます（10文字以上入力してください）', 'warning');
+      return;
+    }
+    if (trimmedLog.length > 50000) {
+      showToast('ログが長すぎます（最大50000文字）', 'warning');
       return;
     }
     if (isLoading) return;

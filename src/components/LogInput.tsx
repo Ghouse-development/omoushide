@@ -23,6 +23,7 @@ export default function LogInput({ value, onChange, onAnalyze, isLoading }: LogI
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          maxLength={50000}
           placeholder="例：
 2024/5/1 10:30 電話
 佐藤様から入電。商品がまだ届かないとのこと。
@@ -32,6 +33,16 @@ export default function LogInput({ value, onChange, onAnalyze, isLoading }: LogI
 大雪の影響で配送が3日遅延しているとのこと。"
           className="w-full h-48 p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#1a73e8] focus:border-transparent transition-all text-sm"
         />
+        <div className="flex justify-between items-center mt-2 text-xs text-gray-500">
+          <span>
+            {value.length < 10 && value.length > 0 && (
+              <span className="text-amber-600">あと{10 - value.length}文字以上入力してください</span>
+            )}
+          </span>
+          <span className={value.length > 45000 ? 'text-amber-600' : ''}>
+            {value.length.toLocaleString()} / 50,000文字
+          </span>
+        </div>
         <button
           onClick={onAnalyze}
           disabled={isLoading || !value.trim()}

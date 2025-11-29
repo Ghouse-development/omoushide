@@ -7,79 +7,142 @@ interface ExportButtonsProps {
   reportData: ReportData;
 }
 
-const MAX_EXPORT_SIZE_MB = 10; // 最大10MB
+const MAX_EXPORT_SIZE_MB = 10;
 
-// lab(), oklch(), oklab() などの新しいCSSカラー関数をRGBに変換するヘルパー
-function sanitizeColorsForHtml2Canvas(element: HTMLElement): void {
-  const computedStyle = window.getComputedStyle(element);
-  const colorProps = [
-    'color',
-    'background-color',
-    'border-color',
-    'border-top-color',
-    'border-right-color',
-    'border-bottom-color',
-    'border-left-color',
-    'outline-color',
-    'text-decoration-color',
-    'box-shadow'
-  ];
+// Tailwind CSS v4の全カラークラスをRGBにマッピング
+const TAILWIND_COLOR_OVERRIDES = `
+  /* Gray */
+  .bg-gray-50 { background-color: #f9fafb !important; }
+  .bg-gray-100 { background-color: #f3f4f6 !important; }
+  .bg-gray-200 { background-color: #e5e7eb !important; }
+  .bg-gray-300 { background-color: #d1d5db !important; }
+  .bg-gray-400 { background-color: #9ca3af !important; }
+  .bg-gray-500 { background-color: #6b7280 !important; }
+  .bg-gray-600 { background-color: #4b5563 !important; }
+  .bg-gray-700 { background-color: #374151 !important; }
+  .bg-gray-800 { background-color: #1f2937 !important; }
+  .bg-gray-900 { background-color: #111827 !important; }
+  .text-gray-50 { color: #f9fafb !important; }
+  .text-gray-100 { color: #f3f4f6 !important; }
+  .text-gray-200 { color: #e5e7eb !important; }
+  .text-gray-300 { color: #d1d5db !important; }
+  .text-gray-400 { color: #9ca3af !important; }
+  .text-gray-500 { color: #6b7280 !important; }
+  .text-gray-600 { color: #4b5563 !important; }
+  .text-gray-700 { color: #374151 !important; }
+  .text-gray-800 { color: #1f2937 !important; }
+  .text-gray-900 { color: #111827 !important; }
+  .border-gray-50 { border-color: #f9fafb !important; }
+  .border-gray-100 { border-color: #f3f4f6 !important; }
+  .border-gray-200 { border-color: #e5e7eb !important; }
+  .border-gray-300 { border-color: #d1d5db !important; }
+  .border-gray-400 { border-color: #9ca3af !important; }
+  .border-gray-500 { border-color: #6b7280 !important; }
 
-  colorProps.forEach(prop => {
-    const value = computedStyle.getPropertyValue(prop);
-    if (value && (value.includes('lab(') || value.includes('oklch(') || value.includes('oklab(') || value.includes('color('))) {
-      // 計算されたRGB値を取得して直接設定
-      // ブラウザは内部的にRGBに変換しているので、canvasコンテキストで描画して取得
-      const canvas = document.createElement('canvas');
-      canvas.width = 1;
-      canvas.height = 1;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = value;
-        const rgbValue = ctx.fillStyle; // ブラウザがRGB/RGBAに変換
-        element.style.setProperty(prop, rgbValue, 'important');
-      }
-    }
-  });
+  /* Red */
+  .bg-red-50 { background-color: #fef2f2 !important; }
+  .bg-red-100 { background-color: #fee2e2 !important; }
+  .bg-red-200 { background-color: #fecaca !important; }
+  .bg-red-500 { background-color: #ef4444 !important; }
+  .bg-red-600 { background-color: #dc2626 !important; }
+  .bg-red-700 { background-color: #b91c1c !important; }
+  .text-red-50 { color: #fef2f2 !important; }
+  .text-red-100 { color: #fee2e2 !important; }
+  .text-red-500 { color: #ef4444 !important; }
+  .text-red-600 { color: #dc2626 !important; }
+  .text-red-700 { color: #b91c1c !important; }
+  .border-red-200 { border-color: #fecaca !important; }
+  .border-red-300 { border-color: #fca5a5 !important; }
 
-  // 子要素を再帰的に処理
-  Array.from(element.children).forEach(child => {
-    if (child instanceof HTMLElement) {
-      sanitizeColorsForHtml2Canvas(child);
-    }
-  });
-}
+  /* Blue */
+  .bg-blue-50 { background-color: #eff6ff !important; }
+  .bg-blue-100 { background-color: #dbeafe !important; }
+  .bg-blue-200 { background-color: #bfdbfe !important; }
+  .bg-blue-500 { background-color: #3b82f6 !important; }
+  .bg-blue-600 { background-color: #2563eb !important; }
+  .bg-blue-700 { background-color: #1d4ed8 !important; }
+  .text-blue-50 { color: #eff6ff !important; }
+  .text-blue-500 { color: #3b82f6 !important; }
+  .text-blue-600 { color: #2563eb !important; }
+  .text-blue-700 { color: #1d4ed8 !important; }
+  .border-blue-200 { border-color: #bfdbfe !important; }
+  .border-blue-300 { border-color: #93c5fd !important; }
 
-// 要素をクローンしてカラーを正規化
-async function captureElementToPng(element: HTMLElement): Promise<string> {
+  /* Green */
+  .bg-green-50 { background-color: #f0fdf4 !important; }
+  .bg-green-100 { background-color: #dcfce7 !important; }
+  .bg-green-500 { background-color: #22c55e !important; }
+  .bg-green-600 { background-color: #16a34a !important; }
+  .text-green-500 { color: #22c55e !important; }
+  .text-green-600 { color: #16a34a !important; }
+  .text-green-700 { color: #15803d !important; }
+  .border-green-200 { border-color: #bbf7d0 !important; }
+
+  /* Yellow */
+  .bg-yellow-50 { background-color: #fefce8 !important; }
+  .bg-yellow-100 { background-color: #fef9c3 !important; }
+  .bg-yellow-500 { background-color: #eab308 !important; }
+  .text-yellow-500 { color: #eab308 !important; }
+  .text-yellow-600 { color: #ca8a04 !important; }
+  .border-yellow-200 { border-color: #fef08a !important; }
+
+  /* Amber */
+  .bg-amber-50 { background-color: #fffbeb !important; }
+  .bg-amber-100 { background-color: #fef3c7 !important; }
+  .bg-amber-500 { background-color: #f59e0b !important; }
+  .text-amber-500 { color: #f59e0b !important; }
+  .text-amber-600 { color: #d97706 !important; }
+  .text-amber-700 { color: #b45309 !important; }
+  .text-amber-800 { color: #92400e !important; }
+  .border-amber-200 { border-color: #fde68a !important; }
+  .border-amber-300 { border-color: #fcd34d !important; }
+
+  /* Orange */
+  .bg-orange-50 { background-color: #fff7ed !important; }
+  .bg-orange-100 { background-color: #ffedd5 !important; }
+  .bg-orange-500 { background-color: #f97316 !important; }
+  .text-orange-500 { color: #f97316 !important; }
+  .text-orange-600 { color: #ea580c !important; }
+
+  /* Purple */
+  .bg-purple-50 { background-color: #faf5ff !important; }
+  .bg-purple-100 { background-color: #f3e8ff !important; }
+  .bg-purple-500 { background-color: #a855f7 !important; }
+  .text-purple-500 { color: #a855f7 !important; }
+  .text-purple-600 { color: #9333ea !important; }
+
+  /* Pink */
+  .bg-pink-50 { background-color: #fdf2f8 !important; }
+  .bg-pink-100 { background-color: #fce7f3 !important; }
+  .bg-pink-500 { background-color: #ec4899 !important; }
+  .text-pink-500 { color: #ec4899 !important; }
+
+  /* White / Black */
+  .bg-white { background-color: #ffffff !important; }
+  .bg-black { background-color: #000000 !important; }
+  .text-white { color: #ffffff !important; }
+  .text-black { color: #000000 !important; }
+
+  /* Transparent handling */
+  .bg-transparent { background-color: transparent !important; }
+
+  /* Focus rings - hide for PDF */
+  .focus\\:ring-2, .focus\\:ring-4, [class*="focus:ring"] {
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  /* Hide no-print elements */
+  .no-print { display: none !important; }
+`;
+
+async function captureElementToPng(element: HTMLElement): Promise<HTMLCanvasElement> {
   const html2canvas = (await import('html2canvas')).default;
 
-  // 一時的なスタイルシートを追加してlab()色を上書き
+  // 一時スタイルシートを追加
   const tempStyle = document.createElement('style');
-  tempStyle.id = 'temp-pdf-export-style';
-  tempStyle.textContent = `
-    /* Tailwind CSS lab() カラーのフォールバック */
-    .bg-gray-50 { background-color: #f9fafb !important; }
-    .bg-gray-100 { background-color: #f3f4f6 !important; }
-    .bg-white { background-color: #ffffff !important; }
-    .bg-red-50 { background-color: #fef2f2 !important; }
-    .bg-amber-100 { background-color: #fef3c7 !important; }
-    .text-gray-400 { color: #9ca3af !important; }
-    .text-gray-500 { color: #6b7280 !important; }
-    .text-gray-700 { color: #374151 !important; }
-    .text-gray-800 { color: #1f2937 !important; }
-    .text-red-500 { color: #ef4444 !important; }
-    .text-red-700 { color: #b91c1c !important; }
-    .text-amber-600 { color: #d97706 !important; }
-    .text-amber-800 { color: #92400e !important; }
-    .border-gray-100 { border-color: #f3f4f6 !important; }
-    .border-gray-200 { border-color: #e5e7eb !important; }
-    .border-gray-300 { border-color: #d1d5db !important; }
-    .border-red-200 { border-color: #fecaca !important; }
-    .border-amber-300 { border-color: #fcd34d !important; }
-    [class*="bg-[#"] { background-color: inherit; }
-    [class*="text-[#"] { color: inherit; }
-  `;
+  tempStyle.id = 'temp-pdf-export-style-' + Date.now();
+  tempStyle.textContent = TAILWIND_COLOR_OVERRIDES;
   document.head.appendChild(tempStyle);
 
   try {
@@ -90,11 +153,10 @@ async function captureElementToPng(element: HTMLElement): Promise<string> {
       backgroundColor: '#ffffff',
       allowTaint: true,
       foreignObjectRendering: false,
+      removeContainer: true,
     });
-
-    return canvas.toDataURL('image/png');
+    return canvas;
   } finally {
-    // 一時スタイルシートを削除
     tempStyle.remove();
   }
 }
@@ -124,68 +186,94 @@ export default function ExportButtons({ reportData }: ExportButtonsProps) {
       const pageHeight = 297;
       const margin = 10;
       const contentWidth = pageWidth - margin * 2;
+      const maxContentHeight = pageHeight - margin * 2;
 
       // Main contentをキャプチャ
-      const mainDataUrl = await captureElementToPng(mainContent);
-
-      // 画像をPDFに追加
-      const img = new Image();
-      img.src = mainDataUrl;
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = reject;
-      });
-
+      const mainCanvas = await captureElementToPng(mainContent);
       const mainImgWidth = contentWidth;
-      const mainImgHeight = (img.height * contentWidth) / img.width;
+      const mainImgHeight = (mainCanvas.height * contentWidth) / mainCanvas.width;
 
       // 複数ページに分割して追加
-      let yPosition = margin;
-      let remainingHeight = mainImgHeight;
-      let sourceY = 0;
-      const imgHeightPerPage = pageHeight - margin * 2;
-
-      // 簡易的な方法: 画像全体を縮小してフィットさせる
-      if (mainImgHeight <= imgHeightPerPage) {
-        pdf.addImage(mainDataUrl, 'PNG', margin, yPosition, mainImgWidth, mainImgHeight);
+      if (mainImgHeight <= maxContentHeight) {
+        // 1ページに収まる場合
+        pdf.addImage(
+          mainCanvas.toDataURL('image/png'),
+          'PNG',
+          margin,
+          margin,
+          mainImgWidth,
+          mainImgHeight
+        );
       } else {
-        // 画像が大きい場合は縮小
-        const scaleFactor = imgHeightPerPage / mainImgHeight;
-        const scaledWidth = mainImgWidth * scaleFactor;
-        const scaledHeight = mainImgHeight * scaleFactor;
-        const xOffset = margin + (contentWidth - scaledWidth) / 2;
-        pdf.addImage(mainDataUrl, 'PNG', xOffset, margin, scaledWidth, scaledHeight);
+        // 複数ページに分割
+        const totalPages = Math.ceil(mainImgHeight / maxContentHeight);
+        const pixelsPerPage = (mainCanvas.height / mainImgHeight) * maxContentHeight;
+
+        for (let page = 0; page < totalPages; page++) {
+          if (page > 0) {
+            pdf.addPage();
+          }
+
+          // このページ用のスライスを作成
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = mainCanvas.width;
+          const remainingPixels = mainCanvas.height - (page * pixelsPerPage);
+          sliceCanvas.height = Math.min(pixelsPerPage, remainingPixels);
+
+          const ctx = sliceCanvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(
+              mainCanvas,
+              0, page * pixelsPerPage,
+              mainCanvas.width, sliceCanvas.height,
+              0, 0,
+              sliceCanvas.width, sliceCanvas.height
+            );
+          }
+
+          const sliceHeight = (sliceCanvas.height * contentWidth) / sliceCanvas.width;
+          pdf.addImage(
+            sliceCanvas.toDataURL('image/png'),
+            'PNG',
+            margin,
+            margin,
+            mainImgWidth,
+            sliceHeight
+          );
+        }
       }
 
       // Visual sheetがある場合は新しいページに追加
       if (visualSheet) {
         pdf.addPage();
-
-        const visualDataUrl = await captureElementToPng(visualSheet);
-
-        const visualImg = new Image();
-        visualImg.src = visualDataUrl;
-        await new Promise<void>((resolve, reject) => {
-          visualImg.onload = () => resolve();
-          visualImg.onerror = reject;
-        });
-
+        const visualCanvas = await captureElementToPng(visualSheet);
         const visualImgWidth = contentWidth;
-        const visualImgHeight = (visualImg.height * contentWidth) / visualImg.width;
+        const visualImgHeight = (visualCanvas.height * contentWidth) / visualCanvas.width;
 
         // ページにフィットさせる
-        const scaleFactor = Math.min(1, imgHeightPerPage / visualImgHeight);
-        const finalWidth = visualImgWidth * scaleFactor;
-        const finalHeight = visualImgHeight * scaleFactor;
-
-        pdf.addImage(
-          visualDataUrl,
-          'PNG',
-          margin + (contentWidth - finalWidth) / 2,
-          margin,
-          finalWidth,
-          finalHeight
-        );
+        if (visualImgHeight <= maxContentHeight) {
+          pdf.addImage(
+            visualCanvas.toDataURL('image/png'),
+            'PNG',
+            margin,
+            margin,
+            visualImgWidth,
+            visualImgHeight
+          );
+        } else {
+          // 縮小してフィット
+          const scaleFactor = maxContentHeight / visualImgHeight;
+          const scaledWidth = visualImgWidth * scaleFactor;
+          const scaledHeight = visualImgHeight * scaleFactor;
+          pdf.addImage(
+            visualCanvas.toDataURL('image/png'),
+            'PNG',
+            margin + (contentWidth - scaledWidth) / 2,
+            margin,
+            scaledWidth,
+            scaledHeight
+          );
+        }
       }
 
       // ファイルサイズチェック
@@ -217,38 +305,38 @@ export default function ExportButtons({ reportData }: ExportButtonsProps) {
 
     try {
       const XLSX = await import('xlsx');
-
-      // Create workbook
       const wb = XLSX.utils.book_new();
 
       // Main sheet data
       const mainData = [
         ['クレーム対応報告書'],
         [],
-        ['報告日', reportData.reportDate],
-        ['報告者', reportData.reporter],
+        ['報告日', reportData.reportDate || ''],
+        ['報告者', reportData.reporter || ''],
         [],
         ['■ 経緯'],
         ['日時', '相手', '経緯（要約）', '詳細'],
-        ...reportData.history.map(h => [h.date, h.person, h.summary, h.detail]),
+        ...(reportData.history || []).map(h => [
+          h.date || '',
+          h.person || '',
+          h.summary || '',
+          h.detail || ''
+        ]),
         [],
         ['■ 原因'],
-        [reportData.cause],
+        [reportData.cause || ''],
         [],
         ['■ 対策'],
-        [reportData.countermeasure],
+        [reportData.countermeasure || ''],
       ];
 
       const ws = XLSX.utils.aoa_to_sheet(mainData);
-
-      // Set column widths
       ws['!cols'] = [
         { wch: 15 },
         { wch: 12 },
         { wch: 30 },
         { wch: 50 },
       ];
-
       XLSX.utils.book_append_sheet(wb, ws, '報告書');
 
       // Visual sheet if exists
@@ -257,21 +345,25 @@ export default function ExportButtons({ reportData }: ExportButtonsProps) {
         const visualData = [
           ['改善対策ご提案書'],
           [],
-          ['タイトル', vs.title],
+          ['タイトル', vs.title || ''],
           [],
           ['■ 経緯サマリー'],
-          [vs.summary],
+          [vs.summary || ''],
           [],
           ['■ 原因分析'],
-          ['根本原因', vs.rootCause],
-          ['詳細分析', vs.causeAnalysis],
+          ['根本原因', vs.rootCause || ''],
+          ['詳細分析', vs.causeAnalysis || ''],
           [],
           ['■ 改善対策'],
           ['タイトル', '内容', '優先度'],
-          ...vs.countermeasures.map(cm => [cm.title, cm.content, cm.priority]),
+          ...(vs.countermeasures || []).map(cm => [
+            cm.title || '',
+            cm.content || '',
+            cm.priority || ''
+          ]),
           [],
           ['■ 期待効果'],
-          [vs.expectedEffect],
+          [vs.expectedEffect || ''],
         ];
 
         const ws2 = XLSX.utils.aoa_to_sheet(visualData);
@@ -283,7 +375,6 @@ export default function ExportButtons({ reportData }: ExportButtonsProps) {
         XLSX.utils.book_append_sheet(wb, ws2, 'AI対策提案');
       }
 
-      // Download
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       XLSX.writeFile(wb, `クレーム対応報告書_${timestamp}.xlsx`);
 
