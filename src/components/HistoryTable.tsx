@@ -20,7 +20,9 @@ export default function HistoryTable({ history, onUpdate, onDelete, onAdd }: His
           経緯（自動生成）
         </h2>
       </div>
-      <div className="overflow-x-auto">
+
+      {/* デスクトップ表示 */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-[#e8f0fe]">
             <tr>
@@ -90,6 +92,64 @@ export default function HistoryTable({ history, onUpdate, onDelete, onAdd }: His
           </tbody>
         </table>
       </div>
+
+      {/* モバイル表示（カード形式） */}
+      <div className="md:hidden">
+        {history.length === 0 ? (
+          <div className="px-4 py-8 text-center text-gray-400">
+            ログを貼り付けて「経緯を自動書き出し」ボタンを押してください
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {history.map((item, index) => (
+              <div key={item.id} className={`p-4 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex gap-2 text-xs text-gray-500">
+                    <input
+                      type="text"
+                      value={item.date}
+                      onChange={(e) => onUpdate(item.id, 'date', e.target.value)}
+                      placeholder="日時"
+                      className="px-2 py-1 border border-gray-200 rounded w-24 text-xs"
+                    />
+                    <input
+                      type="text"
+                      value={item.person}
+                      onChange={(e) => onUpdate(item.id, 'person', e.target.value)}
+                      placeholder="相手"
+                      className="px-2 py-1 border border-gray-200 rounded w-20 text-xs"
+                    />
+                  </div>
+                  <button
+                    onClick={() => onDelete(item.id)}
+                    className="text-red-500 hover:text-red-700 transition-colors no-print"
+                    title="削除"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={item.summary}
+                  onChange={(e) => onUpdate(item.id, 'summary', e.target.value)}
+                  placeholder="経緯（要約）"
+                  className="w-full px-2 py-1 border border-gray-200 rounded mb-2 text-sm font-medium"
+                />
+                <textarea
+                  value={item.detail}
+                  onChange={(e) => onUpdate(item.id, 'detail', e.target.value)}
+                  placeholder="詳細"
+                  className="w-full px-2 py-1 border border-gray-200 rounded text-sm resize-none"
+                  rows={2}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="px-4 py-3 border-t border-gray-200 no-print">
         <button
           onClick={onAdd}

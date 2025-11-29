@@ -1,14 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyBQVbYEVwPAzdAImoMIVc4c5z4eni4W3KA';
+// レート制限用のシンプルなメモリストア
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT = 10; // 1分あたりのリクエスト数
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1分
 
-const genAI = new GoogleGenerativeAI(API_KEY);
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const record = rateLimitStore.get(ip);
+
+  if (!record || now > record.resetTime) {
+    rateLimitStore.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+
+  if (record.count >= RATE_LIMIT) {
+    return false;
+  }
+
+  record.count++;
+  return true;
+}
+
+// 環境変数からAPIキーを取得（フォールバックなし）
+const API_KEY = process.env.GEMINI_API_KEY;
 
 export async function POST(request: NextRequest) {
-  try {
-    const { action, data } = await request.json();
+  // APIキーチェック
+  if (!API_KEY) {
+    console.error('GEMINI_API_KEY is not configured');
+    return NextResponse.json(
+      { success: false, error: 'サーバー設定エラー: APIキーが設定されていません' },
+      { status: 500 }
+    );
+  }
 
+  // レート制限チェック
+  const ip = request.headers.get('x-forwarded-for') || 'unknown';
+  if (!checkRateLimit(ip)) {
+    return NextResponse.json(
+      { success: false, error: 'リクエスト制限に達しました。1分後に再試行してください。' },
+      { status: 429 }
+    );
+  }
+
+  try {
+    const body = await request.json();
+    const { action, data } = body;
+
+    // 入力バリデーション
+    if (!action || typeof action !== 'string') {
+      return NextResponse.json(
+        { success: false, error: '無効なリクエスト: actionが必要です' },
+        { status: 400 }
+      );
+    }
+
+    if (!data || typeof data !== 'object') {
+      return NextResponse.json(
+        { success: false, error: '無効なリクエスト: dataが必要です' },
+        { status: 400 }
+      );
+    }
+
+    const genAI = new GoogleGenerativeAI(API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     let prompt = '';
@@ -16,6 +72,12 @@ export async function POST(request: NextRequest) {
 
     switch (action) {
       case 'summarize':
+        if (!data.logText || typeof data.logText !== 'string' || data.logText.trim().length < 10) {
+          return NextResponse.json(
+            { success: false, error: 'ログテキストが短すぎます（10文字以上必要）' },
+            { status: 400 }
+          );
+        }
         responseFormat = 'json';
         prompt = `以下の顧客対応ログを分析し、時系列で経緯を整理してください。
 
@@ -52,10 +114,10 @@ ${data.logText}`;
    └ 詳細説明
 
 【経緯データ】
-${data.history?.map((h: { date: string; summary: string; detail: string }) => `${h.date}: ${h.summary} - ${h.detail}`).join('\n') || ''}
+${data.history?.map((h: { date: string; summary: string; detail: string }) => `${h.date}: ${h.summary} - ${h.detail}`).join('\n') || '経緯データなし'}
 
 【元のログ】
-${data.logText || ''}`;
+${data.logText || '（なし）'}`;
         break;
 
       case 'suggestCountermeasure':
@@ -80,13 +142,13 @@ ${data.logText || ''}`;
   実施時期: [即時/短期/中長期]
 
 【経緯データ】
-${data.history?.map((h: { date: string; summary: string }) => `${h.date}: ${h.summary}`).join('\n') || ''}
+${data.history?.map((h: { date: string; summary: string }) => `${h.date}: ${h.summary}`).join('\n') || '経緯データなし'}
 
 【原因】
 ${data.cause || '（未入力）'}
 
 【元のログ】
-${data.logText || ''}`;
+${data.logText || '（なし）'}`;
         break;
 
       case 'generateVisualSheet':
@@ -121,7 +183,7 @@ ${data.logText || ''}`;
 }
 
 【経緯データ】
-${data.history?.map((h: { date: string; summary: string; detail: string }) => `${h.date}: ${h.summary} - ${h.detail}`).join('\n') || ''}
+${data.history?.map((h: { date: string; summary: string; detail: string }) => `${h.date}: ${h.summary} - ${h.detail}`).join('\n') || '経緯データなし'}
 
 【原因（ユーザー入力）】
 ${data.cause || '（未入力）'}
@@ -134,7 +196,10 @@ ${data.logText || '（なし）'}`;
         break;
 
       default:
-        return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
+        return NextResponse.json(
+          { success: false, error: `無効なアクション: ${action}` },
+          { status: 400 }
+        );
     }
 
     const result = await model.generateContent(prompt);
@@ -142,24 +207,56 @@ ${data.logText || '（なし）'}`;
     const text = response.text();
 
     if (responseFormat === 'json') {
-      // JSONを抽出
       const jsonMatch = text.match(/[\[{][\s\S]*[\]}]/);
       if (jsonMatch) {
         try {
           const parsed = JSON.parse(jsonMatch[0]);
           return NextResponse.json({ success: true, data: parsed });
-        } catch {
-          return NextResponse.json({ success: true, data: text });
+        } catch (parseError) {
+          console.error('JSON parse error:', parseError);
+          return NextResponse.json(
+            { success: false, error: 'AIの応答を解析できませんでした。再試行してください。' },
+            { status: 500 }
+          );
         }
       }
+      return NextResponse.json(
+        { success: false, error: 'AIからの応答形式が不正です。再試行してください。' },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ success: true, data: text });
 
   } catch (error) {
     console.error('Gemini API Error:', error);
+
+    // エラータイプに応じたメッセージ
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        { success: false, error: 'リクエストの形式が不正です' },
+        { status: 400 }
+      );
+    }
+
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    if (errorMessage.includes('API_KEY')) {
+      return NextResponse.json(
+        { success: false, error: 'APIキーが無効です' },
+        { status: 401 }
+      );
+    }
+
+    if (errorMessage.includes('quota') || errorMessage.includes('limit')) {
+      return NextResponse.json(
+        { success: false, error: 'API利用制限に達しました。しばらく待ってから再試行してください。' },
+        { status: 429 }
+      );
+    }
+
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'API Error' },
+      { success: false, error: 'AI処理中にエラーが発生しました。再試行してください。' },
       { status: 500 }
     );
   }

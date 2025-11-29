@@ -3,12 +3,13 @@
 interface AIModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onApply: (content: string) => void;
   title: string;
   content: string;
   type: 'cause' | 'countermeasure';
 }
 
-export default function AIModal({ isOpen, onClose, title, content, type }: AIModalProps) {
+export default function AIModal({ isOpen, onClose, onApply, title, content, type }: AIModalProps) {
   if (!isOpen) return null;
 
   const colors = {
@@ -25,6 +26,11 @@ export default function AIModal({ isOpen, onClose, title, content, type }: AIMod
   };
 
   const color = colors[type];
+
+  const handleApply = () => {
+    onApply(content);
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
@@ -47,10 +53,19 @@ export default function AIModal({ isOpen, onClose, title, content, type }: AIMod
             </pre>
           </div>
         </div>
-        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end">
+        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+          <button
+            onClick={handleApply}
+            className={`px-6 py-2 ${color.header} text-white rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center gap-2`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            入力欄に反映
+          </button>
           <button
             onClick={onClose}
-            className={`px-6 py-2 ${color.header} text-white rounded-lg font-medium hover:opacity-90 transition-opacity`}
+            className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors"
           >
             閉じる
           </button>
