@@ -294,19 +294,21 @@ ${logText || '（なし）'}`;
       );
     }
 
-    // APIキーエラー
-    if (errorMessage.includes('API_KEY') || errorMessage.includes('API key')) {
-      return NextResponse.json(
-        { success: false, error: 'APIキーが無効です。管理者にお問い合わせください。' },
-        { status: 401 }
-      );
-    }
-
-    // レート制限エラー
-    if (errorMessage.includes('quota') || errorMessage.includes('limit') || errorMessage.includes('429')) {
+    // レート制限エラー（APIキーエラーより先にチェック - Geminiのレート制限メッセージに"API key"が含まれる場合があるため）
+    if (errorMessage.includes('quota') || errorMessage.includes('limit') || errorMessage.includes('429') ||
+        errorMessage.includes('rate') || errorMessage.includes('too many') || errorMessage.includes('Resource has been exhausted')) {
       return NextResponse.json(
         { success: false, error: 'API利用制限に達しました。しばらく待ってから再試行してください。' },
         { status: 429 }
+      );
+    }
+
+    // APIキーエラー（レート制限を除外した後にチェック）
+    if ((errorMessage.includes('API_KEY') || errorMessage.includes('API key') || errorMessage.includes('invalid')) &&
+        !errorMessage.includes('quota') && !errorMessage.includes('rate')) {
+      return NextResponse.json(
+        { success: false, error: 'APIキーが無効です。管理者にお問い合わせください。' },
+        { status: 401 }
       );
     }
 
